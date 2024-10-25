@@ -1,7 +1,3 @@
-Aqui está um exemplo de um arquivo `README.md` para o seu jogo:
-
----
-
 # Jogo de Adivinhação com Flask
 
 Este é um simples jogo de adivinhação desenvolvido utilizando o framework Flask. O jogador deve adivinhar uma senha criada aleatoriamente, e o sistema fornecerá feedback sobre o número de letras corretas e suas respectivas posições.
@@ -12,105 +8,31 @@ Este é um simples jogo de adivinhação desenvolvido utilizando o framework Fla
 - Adivinhe a senha e receba feedback se as letras estão corretas e/ou em posições corretas.
 - As senhas são armazenadas  utilizando base64.
 - As adivinhações incorretas retornam uma mensagem com dicas.
-  
+
 ## Requisitos
 
-- Python 3.8+
-- Flask
-- Um banco de dados local (ou um mecanismo de armazenamento configurado em `current_app.db`)
-- node 18.17.0
+- [Docker](https://docs.docker.com/engine/install/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
 
 ## Instalação
 
 1. Clone o repositório:
 
    ```bash
-   git clone https://github.com/fams/guess_game.git
+   git clone https://github.com/amandagusmao/guess_game.git
    cd guess-game
    ```
 
-2. Crie um ambiente virtual e ative-o:
-
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate  # Windows
-   ```
-
-3. Instale as dependências:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Configure o banco de dados com as variáveis de ambiente no arquivo start-backend.sh
-    1. Para sqlite
-
-        ```bash
-            export FLASK_APP="run.py"
-            export FLASK_DB_TYPE="sqlite"            # Use SQLITE
-            export FLASK_DB_PATH="caminho/db.sqlite" # caminho do banco
-        ```
-
-    2. Para Postgres
-
-        ```bash
-            export FLASK_APP="run.py"
-            export FLASK_DB_TYPE="postgres"       # Use postgres
-            export FLASK_DB_USER="postgres"       # Usuário do banco
-            export FLASK_DB_NAME="postgres"       # Nome do Banco
-            export FLASK_DB_PASSWORD="secretpass" # Senha do banco
-            export FLASK_DB_HOST="localhost"      # Hostname
-            export FLASK_DB_PORT="5432"           # Porta
-        ```
-
-    3. Para DynamoDB
-
-        ```bash
-        export FLASK_APP="run.py"
-        export FLASK_DB_TYPE="dynamodb"       # Use postgres
-        export AWS_DEFAULT_REGION="us-east-1" # AWS region
-        export AWS_ACCESS_KEY_ID="FAKEACCESSKEY123456" 
-        export AWS_SECRET_ACCESS_KEY="FakeSecretAccessKey987654321"
-        export AWS_SESSION_TOKEN="FakeSessionTokenABCDEFGHIJKLMNOPQRSTUVXYZ1234567890"
-        ```
-
-5. Execute o backend
-
-   ```bash
-   ./start-backend.sh &
-   ```
-
-## Frontend
-No diretorio de frontend
-
-1. Instale o node com o nvm. Se não tiver o nvm instalado, siga o [tutorial](https://github.com/nvm-sh/nvm?tab=readme-ov-file#installing-and-updating)
-
-    ```bash
-    nvm install 18.17.0
-    nvm use 18.17.0
-    # Habilite o yarn
-    corepack enable
+2. Usando docker-compose, faça o build de todos os containers e suba-os
     ```
-
-2. Instale as dependências do node com o npm:
-
-    ```bash
-    npm install
+    docker-compose up --build
     ```
-
-3. Exporte a url onde está executando o backend e execute o backend.
-
-   ```bash
-    export REACT_APP_BACKEND_URL=http://localhost:5000
-    yarn start
-   ```
 
 ## Como Jogar
 
 ### 1. Criar um novo jogo
 
-Acesse a url do frontend http://localhost:3000
+Acesse a url do frontend http://localhost
 
 Digite uma frase secreta
 
@@ -121,7 +43,7 @@ Salve o game-id
 
 ### 2. Adivinhar a senha
 
-Acesse a url do frontend http://localhost:3000
+Acesse a url do frontend http://localhost
 
 Vá para o endponint breaker
 
@@ -129,27 +51,58 @@ entre com o game_id que foi gerado pelo Creator
 
 Tente adivinhar
 
-## Estrutura do Código
+## Estrutura docker
 
-### Rotas:
+No docker-compose, foram criados 4 diferentes serviços:
 
-- **`/create`**: Cria um novo jogo. Armazena a senha codificada em base64 e retorna um `game_id`.
-- **`/guess/<game_id>`**: Permite ao usuário adivinhar a senha. Compara a adivinhação com a senha armazenada e retorna o resultado.
+### backend
 
-### Classes Importantes:
+Sobe a aplicação flask que serve como backend do jogo
 
-- **`Guess`**: Classe responsável por gerenciar a lógica de comparação entre a senha e a tentativa do jogador.
-- **`WrongAttempt`**: Exceção personalizada que é levantada quando a tentativa está incorreta.
+### db
 
+Sobe um banco de dados postgres para armazenar e consultar os dados do jogo
 
+### frontend
 
-## Melhorias Futuras
+Sobe a aplicação react que serve de frontend do jogo, e expõe ela através de um proxy reverso usando nginx. Foi usado um nginx próprio para manter o desacoplamento entre o serviço de frontend e backend
 
-- Implementar autenticação de usuário para salvar e carregar jogos.
-- Adicionar limite de tentativas.
-- Melhorar a interface de feedback para as tentativas de adivinhação.
+### nginx
+
+Sobe um servidor nginx que faz o balanceamento entre as 3 réplicas do backend, e expõe em apenas uma porta, a 5000.
+
+## Decisões
+
+### Desacoplamento
+
+Para manter a facilidade na manutenção e atualização dos serviços, o backend e o frontend não têm nenhuma dependência entre si, podendo ambas as partes serem totalmente substituídas sem quebrar aplicação ou depender de alterar os dois serviços para substituir apenas um.
+
+### Persistência
+
+Foi configurado um volume `db_data` no serviço `db` para que os dados sejam persistidos quando o serviço for reiniciado.
+
+### Balanceamento de carga
+
+O serviço `backend` foi configurado para subir 3 réplicas. Todas as réplicas sobem na porta 5000, e cada uma é especificada como "upstream" na configuração do serviço `nginx`. A distribuição de carga entre as instâncias usa o critério padrão do nginx sem maiores customizações.
+
+### Rede
+
+Por ser a camada pública que o usuário acessa, o serviço `frontend` foi configurado para rodar na porta 80 através do proxy reverso do seu nginx próprio.
+Para evitar confusões de portas, os serviços de `backend` não expõem portas, somente o `nginx`, que expõe a porta 5000. Uma outra alternativa para que as portas tanto de `frontend` quanto de `backend` fossem a 80, seria retirar o nginx do `frontend`, colocar ele para subir na porta 3000 e fazer apenas um nginx que fizesse o proxy de todas as requisições para a porta 3000, e no mesmo nginx fazer com que todas as rotas /api fossem redirecionadas para as réplicas de backend. A decisão de fazer separado foi para ter independência entre os serviços e para se manter mais próximo da aplicação original que não usa docker.
+
+### Alterações
+
+Cada parte da aplicação pode ser inteiramente substituída por outra.
+O banco de dados do `backend` pode ser substituído especificando um novo serviço e alterando as envs que são passadas para o `backend`.
+O `backend` pode ser substituído, e caso necessário, sua porta pode ser alterada no env `REACT_APP_BACKEND_URL`.
+O `frontend` pode ser substituído por qualquer outra aplicação frontend que acesse as rotas do `backend`.
+
+Ao fazer uma alteração nos serviços, basta dar build e subir todos containers novamente:
+    ```
+    docker-compose up --build
+    ```
+
 
 ## Licença
 
 Este projeto está licenciado sob a [MIT License](LICENSE).
-
