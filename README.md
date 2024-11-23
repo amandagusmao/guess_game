@@ -11,10 +11,27 @@ Este é um simples jogo de adivinhação desenvolvido utilizando o framework Fla
 
 ## Requisitos
 
-- [Docker](https://docs.docker.com/engine/install/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+- [Docker](https://www.docker.com/products/docker-desktop)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+- Um cluster Kubernetes
 
-## Instalação
+## Passo 1: Criar o Cluster Kubernetes
+
+### Usando o [Minikube](https://minikube.sigs.k8s.io/docs/) (local)
+Se você está usando o Minikube, inicie o cluster com o seguinte comando:
+
+```bash
+minikube start
+```
+### Usando o Docker Desktop
+Se você estiver utilizando o Docker Desktop com suporte ao Kubernetes, ative o Kubernetes nas configurações e certifique-se de que o cluster esteja em execução.
+
+### Usando um Cluster Remoto (Exemplo: GKE, EKS, AKS)
+Certifique-se de que seu cluster Kubernetes esteja ativo e que você tenha as credenciais de acesso configuradas corretamente.
+
+## Passo 2: Aplicar os Arquivos de Configuração do Kubernetes
+
+### Instalação
 
 1. Clone o repositório:
 
@@ -23,10 +40,87 @@ Este é um simples jogo de adivinhação desenvolvido utilizando o framework Fla
    cd guess-game
    ```
 
-2. Usando docker-compose, faça o build de todos os containers e suba-os
+2. Agora, aplique as configurações de deployment, service, e outros recursos do Kubernetes
     ```
-    docker-compose up --build
+    kubectl apply -f k8s/
     ```
+#### Para aplicação do backend, rode os seguintes comandos:
+```
+kubectl apply -f ./k8s/backend/deployment.yaml
+kubectl apply -f ./k8s/backend/hpa.yaml
+kubectl apply -f ./k8s/backend/service.yaml
+```
+
+#### Para aplicação do frontend, rode os seguintes comandos:
+```
+kubectl apply -f ./k8s/frontend/deployment.yaml
+kubectl apply -f ./k8s/frontend/service.yaml
+```
+
+#### Para aplicação do banco de dados, rode os seguintes comandos:
+```
+kubectl apply -f ./k8s/db/deployment.yaml
+kubectl apply -f ./k8s/db/pvc.yaml
+kubectl apply -f ./k8s/db/service.yaml
+```
+
+## Passo 3: Expor o Frontend
+
+A aplicação frontend está configurada para rodar em um Service do tipo `NodePort`, o que permite acessá-la diretamente pela porta do seu localhost.
+
+### Verifique o Service
+
+Para garantir que o frontend foi exposto corretamente, use o comando:
+```
+kubectl get svc -n guess-game
+```
+Você deve ver algo como:
+```
+NAME        TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+frontend    NodePort    10.110.210.140   <none>        80:30080/TCP   10m
+```
+Isso indica que a aplicação frontend está acessível na porta 30080 do seu localhost.
+
+### Acessar o Frontend
+
+Agora, abra seu navegador e acesse:
+```
+http://localhost:30080
+```
+Você deve ser capaz de ver a interface do frontend da aplicação.
+
+## Passo 4: Escalar o Backend com HPA
+
+A Horizontal Pod Autoscaler (HPA) foi configurada para o backend. O HPA ajustará automaticamente o número de réplicas do seu serviço backend com base na carga de CPU.
+
+### Verifique o HPA
+Para verificar o HPA, use o comando:
+```
+kubectl get hpa -n guess-game
+```
+### Escalar Manualmente
+Você também pode escalar manualmente o backend com o comando:
+```
+kubectl scale deployment backend --replicas=3 -n guess-game
+```
+## Passo 5: Monitoramento e Logs
+
+Para monitorar o status dos pods no seu cluster Kubernetes, utilize o comando:
+```
+kubectl get pods -n guess-game
+```
+Para visualizar os logs de um pod específico (por exemplo, o backend), use o comando:
+```
+kubectl logs <pod-name> -n guess-game
+```
+
+## Passo 6: Parar a Aplicação
+Quando você terminar de usar a aplicação, você pode excluir os recursos criados com o comando:
+```
+kubectl delete -f k8s/
+```
+## Considerações
+Agora a aplicação deve estar rodando no Kubernetes e acessível através do navegador. A arquitetura conta com um frontend em React, backend em Flask e banco de dados PostgreSQL, tudo orquestrado com Kubernetes.
 
 ## Como Jogar
 
@@ -51,9 +145,9 @@ entre com o game_id que foi gerado pelo Creator
 
 Tente adivinhar
 
-## Estrutura docker
+## Estrutura kubernetes
 
-No docker-compose, foram criados 4 diferentes serviços:
+Na pasta k8s, foram criados 3 diferentes serviços:
 
 ### backend
 
@@ -65,42 +159,7 @@ Sobe um banco de dados postgres para armazenar e consultar os dados do jogo
 
 ### frontend
 
-Sobe a aplicação react que serve de frontend do jogo, e expõe ela através de um proxy reverso usando nginx. Foi usado um nginx próprio para manter o desacoplamento entre o serviço de frontend e backend
-
-### nginx
-
-Sobe um servidor nginx que faz o balanceamento entre as 3 réplicas do backend, e expõe em apenas uma porta, a 5000.
-
-## Decisões
-
-### Desacoplamento
-
-Para manter a facilidade na manutenção e atualização dos serviços, o backend e o frontend não têm nenhuma dependência entre si, podendo ambas as partes serem totalmente substituídas sem quebrar aplicação ou depender de alterar os dois serviços para substituir apenas um.
-
-### Persistência
-
-Foi configurado um volume `db_data` no serviço `db` para que os dados sejam persistidos quando o serviço for reiniciado.
-
-### Balanceamento de carga
-
-O serviço `backend` foi configurado para subir 3 réplicas. Todas as réplicas sobem na porta 5000, e cada uma é especificada como "upstream" na configuração do serviço `nginx`. A distribuição de carga entre as instâncias usa o critério padrão do nginx sem maiores customizações.
-
-### Rede
-
-Por ser a camada pública que o usuário acessa, o serviço `frontend` foi configurado para rodar na porta 80 através do proxy reverso do seu nginx próprio.
-Para evitar confusões de portas, os serviços de `backend` não expõem portas, somente o `nginx`, que expõe a porta 5000. Uma outra alternativa para que as portas tanto de `frontend` quanto de `backend` fossem a 80, seria retirar o nginx do `frontend`, colocar ele para subir na porta 3000 e fazer apenas um nginx que fizesse o proxy de todas as requisições para a porta 3000, e no mesmo nginx fazer com que todas as rotas /api fossem redirecionadas para as réplicas de backend. A decisão de fazer separado foi para ter independência entre os serviços e para se manter mais próximo da aplicação original que não usa docker.
-
-### Alterações
-
-Cada parte da aplicação pode ser inteiramente substituída por outra.
-O banco de dados do `backend` pode ser substituído especificando um novo serviço e alterando as envs que são passadas para o `backend`.
-O `backend` pode ser substituído, e caso necessário, sua porta pode ser alterada no env `REACT_APP_BACKEND_URL`.
-O `frontend` pode ser substituído por qualquer outra aplicação frontend que acesse as rotas do `backend`.
-
-Ao fazer uma alteração nos serviços, basta dar build e subir todos containers novamente:
-    ```
-    docker-compose up --build
-    ```
+Sobe a aplicação react que serve de frontend do jogo
 
 
 ## Licença
